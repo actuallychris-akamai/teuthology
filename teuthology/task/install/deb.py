@@ -31,6 +31,55 @@ def _retry_if_eagain_in_output(remote, args):
 def install_dep_packages(remote, args):
     _retry_if_eagain_in_output(remote, args)
 
+def _apt_addrepo(remote, repo_list):
+    """
+    Add apt repos to the remote system.
+
+    :param remote: remote node where to add repos
+    :param repo_list: list of dictionaries with keys 'name', 'url'
+    """
+    for repo in repo_list:
+        repo_line = "deb [trusted=yes] {url} ./".format(url=repo['url'])
+        if 'dist' in repo:
+            repo_line = "deb [trusted=yes] {url} {dist} {components}".format(
+                url=repo['url'],
+                dist=repo['dist'],
+                components=repo.get('components', 'main'),
+            )
+        repo_path = '/etc/apt/sources.list.d/{name}.list'.format(
+            name=repo['name'])
+        log.info("Adding apt repo: %s", repo_line)
+        remote.sudo_write_file(repo_path, repo_line + '\n')
+        if 'priority' in repo:
+            pin = (
+                "Package: *\n"
+                "Pin: origin {origin}\n"
+                "Pin-Priority: {priority}\n"
+            ).format(
+                origin=repo.get('origin', '*'),
+                priority=repo['priority'],
+            )
+            pin_path = '/etc/apt/preferences.d/{name}.pref'.format(
+                name=repo['name'])
+            remote.sudo_write_file(pin_path, pin)
+
+
+def _apt_removerepo(remote, repo_list):
+    """
+    Remove apt repos from the remote system.
+
+    :param remote: remote node where to remove repos
+    :param repo_list: list of dictionaries with keys 'name'
+    """
+    for repo in repo_list:
+        repo_path = '/etc/apt/sources.list.d/{name}.list'.format(
+            name=repo['name'])
+        remote.run(args=['sudo', 'rm', '-f', repo_path])
+        pin_path = '/etc/apt/preferences.d/{name}.pref'.format(
+            name=repo['name'])
+        remote.run(args=['sudo', 'rm', '-f', pin_path])
+
+
 def _update_package_list_and_install(ctx, remote, debs, config):
     """
     Runs ``apt-get update`` first, then runs ``apt-get install``, installing
@@ -64,36 +113,54 @@ def _update_package_list_and_install(ctx, remote, debs, config):
             stdout=StringIO(),
         )
 
-    builder = _get_builder_project(ctx, remote, config)
-    log.info("Installing packages: {pkglist} on remote deb {arch}".format(
-        pkglist=", ".join(debs), arch=builder.arch)
-    )
+    repos = config.get('repos')
     system_pkglist = config.get('extra_system_packages')
     if system_pkglist:
         if isinstance(system_pkglist, dict):
             system_pkglist = system_pkglist.get('deb')
-        log.info("Installing system (non-project) packages: {pkglist} on remote deb {arch}".format(
-            pkglist=", ".join(system_pkglist), arch=builder.arch)
+
+    if repos:
+        log.info("Using custom apt repos")
+        _apt_addrepo(remote, repos)
+        remote.run(args=['sudo', 'apt-get', 'update'], check_status=False)
+        install_cmd = [
+                'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y',
+                '--force-yes',
+                '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
+                    'Dpkg::Options::="--force-confold"'),
+                'install',
+            ]
+        install_dep_packages(remote,
+            args=install_cmd + list(debs),
         )
-    # get baseurl
-    log.info('Pulling from %s', builder.base_url)
+    else:
+        builder = _get_builder_project(ctx, remote, config)
+        log.info("Installing packages: {pkglist} on remote deb {arch}".format(
+            pkglist=", ".join(debs), arch=builder.arch)
+        )
+        if system_pkglist:
+            log.info("Installing system (non-project) packages: {pkglist} on remote deb {arch}".format(
+                pkglist=", ".join(system_pkglist), arch=builder.arch)
+            )
+        # get baseurl
+        log.info('Pulling from %s', builder.base_url)
 
-    version = builder.version
-    log.info('Package version is %s', version)
+        version = builder.version
+        log.info('Package version is %s', version)
 
-    builder.install_repo()
+        builder.install_repo()
 
-    remote.run(args=['sudo', 'apt-get', 'update'], check_status=False)
-    install_cmd = [
-            'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y',
-            '--force-yes',
-            '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
-                'Dpkg::Options::="--force-confold"'),
-            'install',
-        ]
-    install_dep_packages(remote,
-        args=install_cmd + ['%s=%s' % (d, version) for d in debs],
-    )
+        remote.run(args=['sudo', 'apt-get', 'update'], check_status=False)
+        install_cmd = [
+                'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y',
+                '--force-yes',
+                '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
+                    'Dpkg::Options::="--force-confold"'),
+                'install',
+            ]
+        install_dep_packages(remote,
+            args=install_cmd + ['%s=%s' % (d, version) for d in debs],
+        )
     if system_pkglist:
         install_dep_packages(remote,
             args=install_cmd + system_pkglist,
@@ -163,8 +230,12 @@ def _remove(ctx, config, remote, debs):
 
 
 def _remove_sources_list(ctx, config, remote):
-    builder = _get_builder_project(ctx, remote, config)
-    builder.remove_repo()
+    repos = config.get('repos')
+    if repos:
+        _apt_removerepo(remote, repos)
+    else:
+        builder = _get_builder_project(ctx, remote, config)
+        builder.remove_repo()
     remote.run(
         args=[
             'sudo', 'apt-get', 'update',

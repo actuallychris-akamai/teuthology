@@ -2,3 +2,4 @@
 # For ansible pipelining
 Defaults !requiretty
 Defaults visiblepw
+Defaults rlimit_core=infinity

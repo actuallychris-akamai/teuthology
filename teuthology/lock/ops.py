@@ -518,4 +518,8 @@ def stop_node(name: str, status: Union[dict, None]):
             args=['sudo', '/testnode_stop.sh'],
             check_status=False,
         )
+        remote_.run(
+            args=['sudo', '/testnode_start.sh'],
+            check_status=False,
+        )
         return

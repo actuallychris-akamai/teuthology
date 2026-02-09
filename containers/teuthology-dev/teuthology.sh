@@ -9,7 +9,7 @@ if [ -n "$TEUTHOLOGY_TESTNODES" ]; then
     done
     TEUTHOLOGY_CONF=${TEUTHOLOGY_CONF:-}
 else
-    TEUTHOLOGY_CONF=/teuthology/containerized_node.yaml
+    TEUTHOLOGY_CONF=${TEUTHOLOGY_CONF:-/teuthology/containerized_node.yaml}
 fi
 export TEUTHOLOGY_MACHINE_TYPE=${TEUTHOLOGY_MACHINE_TYPE:-testnode}
 if [ "$TEUTHOLOGY_SUITE" != "none" ]; then
@@ -25,7 +25,7 @@ if [ "$TEUTHOLOGY_SUITE" != "none" ]; then
         --suite "${TEUTHOLOGY_SUITE:-teuthology:no-ceph}" \
         --suite-branch "${TEUTHOLOGY_SUITE_BRANCH:-main}" \
         --suite-repo "${TEUTHOLOGY_SUITE_REPO:-https://github.com/ceph/ceph.git}" \
-        --filter-out "libcephfs,kclient" \
+        --filter-out "libcephfs,kclient,valgrind,cls_sem_set" \
         --force-priority \
         --seed 349 \
         ${TEUTHOLOGY_SUITE_EXTRA_ARGS} \

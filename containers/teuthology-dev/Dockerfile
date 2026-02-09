@@ -10,6 +10,7 @@ RUN apt-get update && \
     ipmitool \
     python3-pip \
     python3-venv \
+    software-properties-common \
     vim \
     jq \
     curl \
@@ -19,8 +20,12 @@ RUN apt-get update && \
     libyaml-dev \
     locales \
     lsb-release && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.10 python3.10-dev python3.10-venv && \
     apt-get clean all && \
     locale-gen $LC_ALL
+ENV PYTHON=python3.10
 WORKDIR /teuthology
 COPY requirements.txt requirements.yml ansible.cfg bootstrap /teuthology/
 RUN \
@@ -37,7 +42,8 @@ COPY containers/teuthology-dev/containerized_node.yaml /teuthology
 COPY containers/teuthology-dev/.teuthology.yaml /root
 COPY containers/teuthology-dev/teuthology.sh /
 RUN \
-    mkdir $HOME/.ssh && \
+    ln -s /root /home/root && \
+    mkdir -p $HOME/.ssh && \
     touch $HOME/.ssh/id_rsa && \
     chmod 600 $HOME/.ssh/id_rsa && \
     echo "StrictHostKeyChecking=no" > $HOME/.ssh/config && \
